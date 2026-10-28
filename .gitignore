@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Testing and coverage
+coverage/
+*.lcov
+.pytest_cache/
+
+# Local Database Data
+pgdata/
+*.sqlite
+*.sqlite3
+
+# Next.js build
+.next/
+out/
+build/
+dist/
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
+
+# Python virtualenvs and caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+parts/
+sdist/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Make sure frontend/src/lib is tracked
+!frontend/src/lib/**
+
+# Environment and secrets (never commit actual credentials)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.cert
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE and OS files
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
