@@ -249,6 +249,37 @@ export function mapBackendUserToUser(bUser: BackendUserResponse): User {
   };
 }
 
+export const TOKEN_STORAGE_KEY = "farmlink_token";
+export const USER_STORAGE_KEY = "farmlink_user";
+
+export function getStoredToken(): string | null {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem(TOKEN_STORAGE_KEY);
+  }
+  return null;
+}
+
+export function setStoredToken(token: string): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem(TOKEN_STORAGE_KEY, token);
+  }
+}
+
+export function clearStoredAuth(): void {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(TOKEN_STORAGE_KEY);
+    localStorage.removeItem(USER_STORAGE_KEY);
+  }
+}
+
+export function getAuthHeaders(): Record<string, string> {
+  const token = getStoredToken();
+  if (token) {
+    return { Authorization: `Bearer ${token}` };
+  }
+  return {};
+}
+
 export interface UpdateProfilePayload {
   full_name?: string;
   phone_number?: string;
@@ -264,7 +295,11 @@ export async function updateUserProfile(payload: UpdateProfilePayload): Promise<
   try {
     const res = await fetch(`${API_BASE_URL}/users/me`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       body: JSON.stringify(payload),
     });
@@ -276,7 +311,7 @@ export async function updateUserProfile(payload: UpdateProfilePayload): Promise<
 
     const updatedUser = mapBackendUserToUser(data);
     if (typeof window !== "undefined") {
-      localStorage.setItem("farmlink_user", JSON.stringify(updatedUser));
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
     }
     return { user: updatedUser };
   } catch (err: unknown) {
@@ -299,9 +334,13 @@ export async function registerUser(payload: RegisterPayload): Promise<{ user: Us
       throw new Error(data.detail || "Registration failed");
     }
 
-    // In browser, save user in localStorage as backup session indicator (token remains in HttpOnly cookie)
-    if (typeof window !== "undefined" && data.user) {
-      localStorage.setItem("farmlink_user", JSON.stringify(mapBackendUserToUser(data.user)));
+    if (typeof window !== "undefined") {
+      if (data.access_token) {
+        setStoredToken(data.access_token);
+      }
+      if (data.user) {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapBackendUserToUser(data.user)));
+      }
     }
 
     return { user: mapBackendUserToUser(data.user) };
@@ -325,8 +364,13 @@ export async function loginUser(email: string, password: string): Promise<{ user
       throw new Error(data.detail || "Invalid email or password");
     }
 
-    if (typeof window !== "undefined" && data.user) {
-      localStorage.setItem("farmlink_user", JSON.stringify(mapBackendUserToUser(data.user)));
+    if (typeof window !== "undefined") {
+      if (data.access_token) {
+        setStoredToken(data.access_token);
+      }
+      if (data.user) {
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(mapBackendUserToUser(data.user)));
+      }
     }
 
     return { user: mapBackendUserToUser(data.user) };
@@ -340,14 +384,16 @@ export async function logoutUser(): Promise<void> {
   try {
     await fetch(`${API_BASE_URL}/auth/logout`, {
       method: "POST",
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
   } catch {
     // Ignore network error on logout
   } finally {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("farmlink_user");
-    }
+    clearStoredAuth();
   }
 }
 
@@ -355,28 +401,29 @@ export async function getCurrentUser(): Promise<import("@/types").User | null> {
   try {
     const res = await fetch(`${API_BASE_URL}/auth/me`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       cache: "no-store",
     });
 
     if (!res.ok) {
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("farmlink_user");
-      }
+      clearStoredAuth();
       return null;
     }
 
     const data = await res.json();
     const user = mapBackendUserToUser(data);
     if (typeof window !== "undefined") {
-      localStorage.setItem("farmlink_user", JSON.stringify(user));
+      localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
     }
     return user;
   } catch {
     // Fall back to cached user in local storage if offline
     if (typeof window !== "undefined") {
-      const cached = localStorage.getItem("farmlink_user");
+      const cached = localStorage.getItem(USER_STORAGE_KEY);
       if (cached) {
         try {
           return JSON.parse(cached);
@@ -418,7 +465,10 @@ export async function fetchFarmerDashboard(): Promise<{ data: FarmerDashboardDat
   try {
     const res = await fetch(`${API_BASE_URL}/farmer/dashboard`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       cache: "no-store",
     });
@@ -450,7 +500,10 @@ export async function fetchFarmerProducts(): Promise<{ products: ProduceItem[]; 
   try {
     const res = await fetch(`${API_BASE_URL}/farmer/products`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       cache: "no-store",
     });
@@ -484,7 +537,11 @@ export async function createFarmerProduct(payload: ProductFormData): Promise<{ p
   try {
     const res = await fetch(`${API_BASE_URL}/farmer/products`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       body: JSON.stringify(payload),
     });
@@ -505,7 +562,11 @@ export async function updateFarmerProduct(id: number | string, payload: Partial<
   try {
     const res = await fetch(`${API_BASE_URL}/farmer/products/${id}`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       body: JSON.stringify(payload),
     });
@@ -526,7 +587,11 @@ export async function updateFarmerProductStock(id: number | string, availableQua
   try {
     const res = await fetch(`${API_BASE_URL}/farmer/products/${id}/stock`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       body: JSON.stringify({ available_quantity: availableQuantity }),
     });
@@ -546,7 +611,10 @@ export async function archiveFarmerProduct(id: number | string): Promise<{ succe
   try {
     const res = await fetch(`${API_BASE_URL}/farmer/products/${id}`, {
       method: "DELETE",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -580,7 +648,11 @@ export async function submitCartCheckout(payload: CheckoutPayload): Promise<{ da
   try {
     const res = await fetch(`${API_BASE_URL}/orders/checkout`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       body: JSON.stringify(payload),
     });
@@ -605,7 +677,10 @@ export async function fetchBuyerOrders(status?: string): Promise<{ orders: impor
     const url = status ? `${API_BASE_URL}/orders/?status=${status}` : `${API_BASE_URL}/orders/`;
     const res = await fetch(url, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -625,7 +700,10 @@ export async function fetchBuyerOrderDetail(orderId: number | string): Promise<{
   try {
     const res = await fetch(`${API_BASE_URL}/orders/${orderId}`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -645,7 +723,11 @@ export async function cancelBuyerOrder(orderId: number | string, notes?: string)
   try {
     const res = await fetch(`${API_BASE_URL}/orders/${orderId}/cancel`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json", Accept: "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
       body: JSON.stringify({ notes }),
     });
@@ -667,7 +749,10 @@ export async function fetchFarmerOrders(status?: string): Promise<{ orders: impo
     const url = status ? `${API_BASE_URL}/farmer/orders?status=${status}` : `${API_BASE_URL}/farmer/orders`;
     const res = await fetch(url, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -692,7 +777,10 @@ export async function transitionFarmerOrder(orderId: number | string, action: "a
 
     const res = await fetch(url, {
       method: "PATCH",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -719,7 +807,10 @@ export async function fetchAdminOverview(): Promise<{
   try {
     const res = await fetch(`${API_BASE_URL}/admin/overview`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -760,7 +851,10 @@ export async function fetchAdminProducts(params?: {
     const qs = query.toString() ? `?${query.toString()}` : "";
     const res = await fetch(`${API_BASE_URL}/admin/products${qs}`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -790,6 +884,7 @@ export async function moderateAdminProduct(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...getAuthHeaders(),
       },
       credentials: "include",
       body: JSON.stringify(payload),
@@ -828,7 +923,10 @@ export async function fetchAdminUsers(params?: {
     const qs = query.toString() ? `?${query.toString()}` : "";
     const res = await fetch(`${API_BASE_URL}/admin/users${qs}`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -854,6 +952,7 @@ export async function updateAdminUserStatus(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...getAuthHeaders(),
       },
       credentials: "include",
       body: JSON.stringify(payload),
@@ -894,7 +993,10 @@ export async function fetchAdminOrders(params?: {
     const qs = query.toString() ? `?${query.toString()}` : "";
     const res = await fetch(`${API_BASE_URL}/admin/orders${qs}`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -920,6 +1022,7 @@ export async function updateAdminOrderStatus(
       headers: {
         "Content-Type": "application/json",
         Accept: "application/json",
+        ...getAuthHeaders(),
       },
       credentials: "include",
       body: JSON.stringify(payload),
@@ -960,7 +1063,10 @@ export async function fetchNotifications(params?: {
     const qs = query.toString() ? `?${query.toString()}` : "";
     const res = await fetch(`${API_BASE_URL}/notifications${qs}`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -986,7 +1092,10 @@ export async function fetchUnreadCount(): Promise<{
   try {
     const res = await fetch(`${API_BASE_URL}/notifications/unread-count`, {
       method: "GET",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -1007,7 +1116,10 @@ export async function markNotificationRead(
   try {
     const res = await fetch(`${API_BASE_URL}/notifications/${notificationId}/read`, {
       method: "PATCH",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -1034,7 +1146,10 @@ export async function markAllNotificationsRead(): Promise<{
   try {
     const res = await fetch(`${API_BASE_URL}/notifications/read-all`, {
       method: "PATCH",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 
@@ -1060,7 +1175,10 @@ export async function deleteNotification(
   try {
     const res = await fetch(`${API_BASE_URL}/notifications/${notificationId}`, {
       method: "DELETE",
-      headers: { Accept: "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...getAuthHeaders(),
+      },
       credentials: "include",
     });
 

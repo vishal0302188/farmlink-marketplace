@@ -13,12 +13,13 @@ router = APIRouter()
 
 def set_auth_cookie(response: Response, token: str) -> None:
     """Sets a secure, HttpOnly JWT authentication cookie on the HTTP response."""
+    is_prod = settings.is_production
     response.set_cookie(
         key="access_token",
         value=token,
         httponly=True,
-        secure=settings.ENVIRONMENT == "production",
-        samesite="lax",
+        secure=is_prod,
+        samesite="none" if is_prod else "lax",
         max_age=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         path="/",
     )
@@ -155,10 +156,12 @@ def logout(response: Response):
     """
     Clears the HttpOnly access token authentication cookie.
     """
+    is_prod = settings.is_production
     response.delete_cookie(
         key="access_token",
         path="/",
-        samesite="lax",
+        secure=is_prod,
+        samesite="none" if is_prod else "lax",
     )
     return {"message": "Successfully logged out"}
 

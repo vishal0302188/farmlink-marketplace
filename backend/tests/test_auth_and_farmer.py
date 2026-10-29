@@ -387,3 +387,55 @@ def test_farmer_full_product_update(client):
     assert updated["growing_location"] == "Updated Valley"
     assert updated["is_organic"] is True
     assert updated["image_url"] == "https://images.unsplash.com/photo-example"
+
+
+def test_logout_endpoint(client):
+    """Verify that calling logout returns 200 and removes the auth cookie."""
+    res = client.post("/api/v1/auth/logout")
+    assert res.status_code == 200
+    assert res.json()["message"] == "Successfully logged out"
+
+
+def test_authenticated_requests_with_bearer_token_without_cookies(client):
+    """
+    Regression test: verify that passing 'Authorization: Bearer <token>' allows
+    access to protected endpoints even when no cookies are provided (e.g. cross-origin).
+    """
+    # 1. Register a new farmer
+    email = "bearer.farmer@example.com"
+    reg_payload = {
+        "email": email,
+        "password": "ValidPassword123!",
+        "full_name": "Bearer Test Farmer",
+        "role": "farmer",
+        "organization_name": "Bearer Farm Link",
+        "location": "Nashik",
+        "district": "Nashik",
+        "state": "Maharashtra",
+        "pincode": "422001",
+    }
+    reg_res = client.post("/api/v1/auth/register", json=reg_payload)
+    assert reg_res.status_code == 201
+    data = reg_res.json()
+    token = data["access_token"]
+    assert token is not None
+
+    # 2. Clear client cookies to simulate cross-origin browser request
+    client.cookies.clear()
+
+    # 3. Access protected /auth/me without cookies - must fail 401
+    unauth_res = client.get("/api/v1/auth/me")
+    assert unauth_res.status_code == 401
+    assert "Authentication credentials were not provided" in unauth_res.json()["detail"]
+
+    # 4. Access protected /auth/me WITH Bearer header - must succeed 200
+    auth_headers = {"Authorization": f"Bearer {token}"}
+    me_res = client.get("/api/v1/auth/me", headers=auth_headers)
+    assert me_res.status_code == 200
+    assert me_res.json()["email"] == email
+
+    # 5. Access protected /farmer/dashboard WITH Bearer header - must succeed 200
+    dash_res = client.get("/api/v1/farmer/dashboard", headers=auth_headers)
+    assert dash_res.status_code == 200
+    assert "total_active_listings" in dash_res.json()
+
