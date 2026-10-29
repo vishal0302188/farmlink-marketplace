@@ -1,7 +1,8 @@
+import os
 import re
-from typing import List
+from typing import List, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+from pydantic import Field, model_validator
 
 
 class Settings(BaseSettings):
@@ -11,10 +12,10 @@ class Settings(BaseSettings):
     DEBUG: bool = True
 
     # Database connection string
-    # Must be supplied via environment variable or .env file
-    DATABASE_URL: str = Field(
-        default="postgresql://postgres:postgres@localhost:5432/farmlink_db",
-        description="PostgreSQL connection string. Example: postgresql://user:password@localhost:5432/farmlink_db"
+    # In production, this must be supplied via the DATABASE_URL environment variable.
+    DATABASE_URL: Optional[str] = Field(
+        default=None,
+        description="PostgreSQL connection string. Example: postgresql://user:password@host:5432/farmlink_db"
     )
 
     # JWT Authentication
@@ -33,6 +34,22 @@ class Settings(BaseSettings):
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
+    def is_production(self) -> bool:
+        """
+        Determines whether the application is running in a production environment
+        (via ENVIRONMENT setting or cloud host runtime environment variables).
+        """
+        env = self.ENVIRONMENT.lower().strip()
+        is_cloud = bool(
+            os.getenv("VERCEL")
+            or os.getenv("RENDER")
+            or os.getenv("RAILWAY_ENVIRONMENT")
+            or os.getenv("FLY_APP_NAME")
+            or os.getenv("HEROKU_APP_NAME")
+        )
+        return env in ("production", "prod", "staging") or is_cloud
+
+    @property
     def masked_database_url(self) -> str:
         """
         Returns the database URL with the password sanitized for safe logging.
@@ -41,6 +58,27 @@ class Settings(BaseSettings):
             return ""
         # Match :password@ in the URI and replace with :****@
         return re.sub(r":([^:@]+)@", r":****@", self.DATABASE_URL)
+
+    @model_validator(mode="after")
+    def validate_database_url(self) -> "Settings":
+        db_url = self.DATABASE_URL
+        if self.is_production:
+            if not db_url or not db_url.strip():
+                raise ValueError(
+                    "DATABASE_URL environment variable is required in production. "
+                    "Please configure a valid PostgreSQL connection string in your deployment environment variables."
+                )
+            if any(host in db_url.lower() for host in ("localhost", "127.0.0.1", "::1", "0.0.0.0")):
+                raise ValueError(
+                    f"Invalid DATABASE_URL for production: Database URL targets a local address ({self.masked_database_url}). "
+                    "Production must use a hosted/remote PostgreSQL database instance."
+                )
+        else:
+            # In local development, if no DATABASE_URL was provided in .env or environment,
+            # fall back to local PostgreSQL default
+            if not db_url or not db_url.strip():
+                self.DATABASE_URL = "postgresql://postgres:postgres@localhost:5432/farmlink_db"
+        return self
 
     model_config = SettingsConfigDict(
         env_file=".env",
